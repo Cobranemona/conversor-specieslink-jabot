@@ -1,0 +1,688 @@
+﻿<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Conversor SpeciesLink → JABOT</title>
+    <meta name="description" content="Ferramenta para converter dados do SpeciesLink para o formato JABOT">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔄</text></svg>">
+   
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 40px;
+    background-color: #f4f4f4;
+}
+
+.container {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    width: 650px;
+    margin: auto;
+    box-shadow: 0px 0px 10px #ccc;
+}
+
+h2 {
+    text-align: center;
+}
+
+input,
+button {
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+button {
+    cursor: pointer;
+    background-color: #2c7be5;
+    color: white;
+    border: none;
+    border-radius: 5px;
+}
+
+button:hover {
+    background-color: #1a5fc4;
+}
+
+#progress {
+    margin-top: 10px;
+    display: none;
+    font-weight: bold;
+}
+
+#error {
+    color: red;
+    display: none;
+    margin-top: 10px;
+}
+
+#warning {
+    color: #b8860b;
+    display: none;
+    margin-top: 10px;
+    white-space: pre-line;
+}
+
+</style>
+</head>
+
+<body>
+
+<div style="background:#f0f8ff; padding:10px; margin-top:20px; border-radius:5px;">
+    <h4>📋 Como usar:</h4>
+    <ol>
+        <li>Exporte seus dados do SpeciesLink em formato Excel (.xlsx)</li>
+        <li>Preencha o nome do projeto</li>
+        <li>Escolha o arquivo e clique em Converter</li>
+        <li>O arquivo convertido será baixado automaticamente</li>
+    </ol>
+</div>
+
+<div class="container">
+
+<h2>Conversor SpeciesLink → JABOT</h2>
+
+<label>Nome do projeto:</label>
+<input type="text" id="projeto" placeholder="Ex: Herbário EVB 2026">
+
+<label>Nome do arquivo de saída:</label>
+<input type="text" id="nomeArquivo" placeholder="JABOT_convertido.xlsx">
+
+<label>Arquivo SpeciesLink (.xlsx):</label>
+<input type="file" id="arquivo" accept=".xlsx">
+
+<button onclick="processar()">Converter e Baixar</button>
+
+<div id="progress">
+    Processando <span id="prog-text">0%</span>
+
+</div>
+
+<div id="error"></div>
+
+<div id="warning"></div>
+
+</div>
+
+<div style="text-align:center; margin-top:20px; font-size:12px; color:#666;">
+    Desenvolvido pelo herbário Evaldo Buttura para toda comunidade científica | 
+    <a href="https://github.com/seuusuario/conversor-specieslink-jabot" target="_blank">Código fonte</a>
+</div>
+
+<script>
+
+// ======================================================
+// ORDEM OFICIAL DAS COLUNAS JABOT
+// ======================================================
+
+const colunasJabot = [
+    "numtombo","sufixo","family","genus","cf","sp1","author1","rank1",
+    "sp2","author2","rank2","sp3","author3","vernacular","typestat",
+    "country","majorarea","minorarea","gazetteer","uc",
+    "latitude","longitude",
+    "lat_grau","lat_min","lat_seg","ns",
+    "long_grau","long_min","long_seg","ew",
+    "altprof","altprofmax","unidmedaltprof",
+    "locnotes","flor","fruto","fuste","altura","unidmedaltura",
+    "collector","number","addcoll","colldd","collmm","collyy",
+    "detby","detdd","detmm","detyy",
+    "sigla_colbot_origem","dups","nrdups",
+    "notes","usos","uso_especifico","projeto",
+    "habitat","habito"
+];
+
+// ======================================================
+// COLETORES / DETERMINADORES (NORMALIZAÇÃO COMPLETA)
+// ======================================================
+
+function formatarNomePessoa(nome) {
+
+    if (!nome) return "";
+
+    let n = nome.toString().trim();
+
+    // remove espaços duplicados
+    n = n.replace(/\s+/g, " ");
+
+    // separa em partes
+    let partes = n.split(" ").filter(Boolean);
+
+    let sobrenome = [];
+    let iniciais = [];
+
+    // padrão mais seguro:
+    // iniciais = 1 a 3 letras maiúsculas (com ou sem ponto)
+    const regexInicial = /^[A-Z](\.[A-Z])*\.?$|^[A-Z]{1,3}$/;
+
+    for (let p of partes) {
+
+        let limpo = p.replace(/,/g, "");
+
+        if (regexInicial.test(limpo)) {
+            iniciais.push(limpo);
+        } else {
+            sobrenome.push(limpo);
+        }
+    }
+
+    let sobrenomeStr = sobrenome.join(" ");
+
+    let iniciaisStr = iniciais
+        .map(i => {
+
+            // normaliza apenas iniciais
+            let letras = i.replace(/\./g, "");
+
+            // evita quebrar palavras longas (Rigo, Silva, etc.)
+            if (letras.length > 3) return i;
+
+            return letras.split("").join(".") + ".";
+        })
+        .join(" ");
+
+    if (!sobrenomeStr) return iniciaisStr;
+    if (!iniciaisStr) return sobrenomeStr;
+
+    return `${sobrenomeStr}, ${iniciaisStr}`;
+}
+
+function processarPessoas(texto) {
+
+    if (!texto) {
+        return {
+            principal: "",
+            adicionais: ""
+        };
+    }
+
+    const partes = texto
+        .split(";")
+        .map(t => t.trim())
+        .filter(Boolean);
+
+    if (partes.length === 0) {
+        return {
+            principal: "",
+            adicionais: ""
+        };
+    }
+
+    const principal = formatarNomePessoa(partes[0]);
+
+    const adicionais = partes
+        .slice(1)
+        .map(formatarNomePessoa)
+        .join("; ");
+
+    return {
+        principal,
+        adicionais
+    };
+}
+
+function processarDeterminadores(texto) {
+
+    if (!texto) return "";
+
+    return texto
+        .split(";")
+        .map(t => t.trim())
+        .filter(Boolean)
+        .map(nome => formatarNomePessoa(nome))
+        .join("; ");
+}
+
+// ======================================================
+// NOVA FUNÇÃO DE PARSE DE COORDENADAS
+// ======================================================
+
+function parseCoordenada(coord, tipo) {
+    
+    if (!coord) return {
+        grau: "",
+        min: "",
+        seg: "",
+        direcao: "",
+        decimal: ""
+    };
+    
+    const valor = coord.toString().trim();
+    
+    // Verifica se está em formato GMS (contém º ou ' ou ")
+    const regexGMS = /(\d{1,3})[º°]\s*(\d{1,2})['′]\s*(\d{1,2}(?:[.,]\d+)?)['′'′]{2}\s*([NSEWnsew])/i;
+    const matchGMS = valor.match(regexGMS);
+    
+    if (matchGMS) {
+        // Formato GMS detectado
+        let graus = parseInt(matchGMS[1]);
+        let minutos = parseInt(matchGMS[2]);
+        let segundos = matchGMS[3].replace(",", ".");
+        let direcao = matchGMS[4].toUpperCase();
+        
+        // Validação da direção conforme o tipo
+        if (tipo === "lat" && !["N", "S"].includes(direcao)) {
+            console.warn(`Direção inválida para latitude: ${direcao}`);
+            return { grau: "", min: "", seg: "", direcao: "", decimal: "" };
+        }
+        if (tipo === "long" && !["E", "W"].includes(direcao)) {
+            console.warn(`Direção inválida para longitude: ${direcao}`);
+            return { grau: "", min: "", seg: "", direcao: "", decimal: "" };
+        }
+        
+        return {
+            grau: graus,
+            min: minutos.toString().padStart(2, "0"),
+            seg: segundos.toString().replace(".", ","), // voltar vírgula para padrão BR
+            direcao: direcao,
+            decimal: "" // já está em GMS
+        };
+    }
+    
+    // Se não é GMS, tenta como decimal (formato original)
+    const valorDecimal = parseFloat(valor.replace(",", "."));
+    
+    if (isNaN(valorDecimal)) {
+        return { grau: "", min: "", seg: "", direcao: "", decimal: "" };
+    }
+    
+    const abs = Math.abs(valorDecimal);
+    const graus = Math.floor(abs);
+    const minutosDec = (abs - graus) * 60;
+    const minutos = Math.floor(minutosDec);
+    const segundos = (minutosDec - minutos) * 60;
+    const segFormat = segundos.toFixed(1).replace(".", ",");
+    
+    let dir = "";
+    if (tipo === "lat") dir = valorDecimal >= 0 ? "N" : "S";
+    if (tipo === "long") dir = valorDecimal >= 0 ? "E" : "W";
+    
+    return {
+        grau: graus,
+        min: minutos.toString().padStart(2, "0"),
+        seg: segFormat,
+        direcao: dir,
+        decimal: valorDecimal.toString().replace(".", ",")
+    };
+}
+
+// ======================================================
+// OUTRAS FUNÇÕES
+// ======================================================
+
+function adicionarAviso(lista, linha, campo, mensagem, valor = "") {
+
+    lista.push({
+        linha: linha,
+        campo: campo,
+        mensagem: mensagem,
+        valor: valor
+    });
+}
+
+function capitalizarPrimeiraLetra(texto) {
+
+    if (!texto) return "";
+
+    texto = texto.toString().trim();
+
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+function extrairHabito(texto) {
+
+    if (!texto) return "";
+
+    const t = texto.toLowerCase().normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+    const regras = [
+        { termos: ["subarbusto"], valor: "Subarbusto" },
+        { termos: ["arvore", "arboreo", "arborea", "arvpore"], valor: "Árvore" },
+        { termos: ["arvoreta", "arvpreta"], valor: "Árvoreta" },
+        { termos: ["arbusto"], valor: "Arbusto" },
+        { termos: ["erva", "herbacea"], valor: "Erva" },
+        { termos: ["trepadeira", "liana", "volúvel", "voluvel"], valor: "Trepadeira" },
+        { termos: ["epifita"], valor: "Epífita" },
+        { termos: ["palmeira"], valor: "Palmeira" }
+    ];
+
+    for (let r of regras) {
+        for (let termo of r.termos) {
+            if (t.includes(termo)) return r.valor;
+        }
+    }
+
+    return "";
+}
+
+function extrairHabitat(texto) {
+
+    if (!texto) return "";
+
+    const t = texto
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, ""); // remove acentos
+
+    const regras = [
+        { termos: ["amazonia"], valor: "Amazônia" },
+        { termos: ["cerrado"], valor: "Cerrado" },
+        { termos: ["mata atlantica"], valor: "Mata Atlântica" },
+        { termos: ["caatinga"], valor: "Caatinga" },
+        { termos: ["pampa"], valor: "Pampa" },
+        { termos: ["pantanal"], valor: "Pantanal" },
+
+        { termos: ["floresta ombrofila densa"], valor: "Floresta Ombrófila Densa" },
+        { termos: ["floresta ombrofila aberta"], valor: "Floresta Ombrófila Aberta" },
+        { termos: ["floresta ombrofila mista", "mata de araucarias"], valor: "Floresta Ombrófila Mista" },
+
+        { termos: ["floresta estacional semidecidual"], valor: "Floresta Estacional Semidecidual" },
+        { termos: ["floresta estacional decidual"], valor: "Floresta Estacional Decidual" },
+        { termos: ["floresta estacional sempre verde"], valor: "Floresta Estacional Sempre-Verde" },
+
+        { termos: ["cerradao"], valor: "Cerradão" },
+        { termos: ["cerrado stricto sensu"], valor: "Cerrado Stricto Sensu" },
+
+        { termos: ["campo sujo"], valor: "Campo Sujo" },
+        { termos: ["campo limpo"], valor: "Campo Limpo" },
+        { termos: ["campo rupestre"], valor: "Campo Rupestre" },
+        { termos: ["campo gramineo", "campo gramineo"], valor: "Campo Gramíneo" },
+        { termos: ["campo arbustivo"], valor: "Campo Arbustivo" },
+
+        { termos: ["vereda"], valor: "Vereda" },
+        { termos: ["mata seca"], valor: "Mata Seca" },
+        { termos: ["igapo"], valor: "Igapó" },
+        { termos: ["varzea"], valor: "Várzea" },
+        { termos: ["campinarana"], valor: "Campinarana" },
+        { termos: ["restinga"], valor: "Restinga" },
+        { termos: ["manguezal"], valor: "Manguezal" },
+
+        { termos: ["campos de altitude"], valor: "Campos de Altitude" },
+        { termos: ["butiazal"], valor: "Butiazal" },
+        { termos: ["banhado"], valor: "Banhado" },
+
+        { termos: ["pantanal de varzea"], valor: "Pantanal de Várzea" },
+        { termos: ["pantanal de baixada"], valor: "Pantanal de Baixada" },
+
+        { termos: ["cordilheira"], valor: "Cordilheira (Pantanal)" },
+        { termos: ["capao"], valor: "Capão" },
+
+        { termos: ["paratudal"], valor: "Paratudal" },
+        { termos: ["salina"], valor: "Salina" },
+
+        { termos: ["recife de coral"], valor: "Recife de Coral" },
+        { termos: ["duna"], valor: "Duna" },
+
+        { termos: ["lago costeiro"], valor: "Lago Costeiro" },
+        { termos: ["delta"], valor: "Delta" },
+
+        { termos: ["baia"], valor: "Baía" },
+        { termos: ["sertao"], valor: "Sertão" },
+        { termos: ["agreste"], valor: "Agreste" },
+
+        { termos: ["cariris novos"], valor: "Cariris Novos" },
+        { termos: ["faixa dos pinhais"], valor: "Faixa dos Pinhais" },
+
+        { termos: ["planalto das araucarias"], valor: "Planalto das Araucárias" },
+        { termos: ["terra firme"], valor: "Terra Firme" }
+    ];
+
+    let encontrados = [];
+
+    for (let r of regras) {
+        for (let termo of r.termos) {
+
+            const termoNorm = termo
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "");
+
+            if (t.includes(termoNorm)) {
+                encontrados.push(r.valor);
+                break;
+            }
+        }
+    }
+
+    return [...new Set(encontrados)].join("; ");
+}
+
+function mostrarAvisos(listaAvisos) {
+
+    const warningDiv = document.getElementById("warning");
+
+    if (listaAvisos.length === 0) {
+
+        warningDiv.style.display = "none";
+        return;
+    }
+
+    const linhas = listaAvisos.map(aviso => {
+
+        let txt =
+            `Linha ${aviso.linha} | ` +
+            `${aviso.campo} | ` +
+            `${aviso.mensagem}`;
+
+        if (aviso.valor) {
+            txt += ` | Valor: ${aviso.valor}`;
+        }
+
+        return txt;
+    });
+
+    warningDiv.innerText = linhas.join("\n");
+
+    warningDiv.style.display = "block";
+}
+
+// ======================================================
+// PROCESSAMENTO PRINCIPAL
+// ======================================================
+
+function processar() {
+
+    const fileInput = document.getElementById("arquivo");
+
+    const projeto = document.getElementById("projeto").value.trim();
+
+    const nomeArquivoInput =
+        document.getElementById("nomeArquivo").value.trim()
+        || `JABOT_${projeto || "convertido"}.xlsx`;
+
+    const progress = document.getElementById("progress");
+    const progText = document.getElementById("prog-text");
+    const erroDiv = document.getElementById("error");
+    const warningDiv = document.getElementById("warning");
+
+    erroDiv.style.display = "none";
+    warningDiv.style.display = "none";
+
+    if (!fileInput.files.length) return alert("Selecione arquivo.");
+    if (!projeto) return alert("Informe o projeto.");
+
+    progress.style.display = "block";
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+
+        const out = [];
+        const avisos = [];
+
+        json.forEach((row, i) => {
+
+            const lat = parseCoordenada(row.verbatimlatitude, "lat");
+            const lon = parseCoordenada(row.verbatimlongitude, "long");
+
+            const col = processarPessoas(row.collector);
+// ======================================================
+// VALIDAÇÕES
+// ======================================================
+
+if (!row.species || row.species.toString().trim() === "") {
+
+    adicionarAviso(
+        avisos,
+        i + 2,
+        "species",
+        "Campo vazio"
+    );
+}
+
+if (
+    row.verbatimlatitude &&
+    isNaN(parseFloat(
+        row.verbatimlatitude.toString().replace(",", ".")
+    ))
+) {
+
+    adicionarAviso(
+        avisos,
+        i + 2,
+        "latitude",
+        "Coordenada inválida",
+        row.verbatimlatitude
+    );
+}
+
+if (
+    row.verbatimlongitude &&
+    isNaN(parseFloat(
+        row.verbatimlongitude.toString().replace(",", ".")
+    ))
+) {
+
+    adicionarAviso(
+        avisos,
+        i + 2,
+        "longitude",
+        "Coordenada inválida",
+        row.verbatimlongitude
+    );
+}
+
+if (
+    row.verbatimlatitude == 0 &&
+    row.verbatimlongitude == 0
+) {
+
+    adicionarAviso(
+        avisos,
+        i + 2,
+        "coordenadas",
+        "Coordenada 0,0 suspeita"
+    );
+}
+
+if (
+    row.collector &&
+    row.collector.length < 3
+) {
+
+    adicionarAviso(
+        avisos,
+        i + 2,
+        "collector",
+        "Nome de coletor muito curto",
+        row.collector
+    );
+}
+            
+            const novaLinha = {
+
+                numtombo: row.catalognumber || "",
+                sufixo: "",
+                family: row.family || "",
+                genus: row.genus || "",
+                cf: "",
+                sp1: row.species || "",
+                author1: row.scientificnameauthor || "",
+
+                country: row.country || "",
+                majorarea: row.stateprovince || "",
+                minorarea: row.county || "",
+                gazetteer: row.locality || "",
+
+                latitude: row.verbatimlatitude || "",
+                longitude: row.verbatimlongitude || "",
+
+                lat_grau: lat.grau,
+                lat_min: lat.min,
+                lat_seg: lat.seg,
+                ns: lat.direcao,
+
+                long_grau: lon.grau,
+                long_min: lon.min,
+                long_seg: lon.seg,
+                ew: lon.direcao,
+
+                collector: col.principal,
+                addcoll: col.adicionais,
+
+                number: row.collectornumber || "",
+
+                colldd: row.daycollected || "",
+                collmm: row.monthcollected || "",
+                collyy: row.yearcollected || "",
+
+                detby: processarDeterminadores(row.identifiedby),
+
+                detdd: row.dayidentified || "",
+                detmm: row.monthidentified || "",
+                detyy: row.yearidentified || "",
+                sigla_colbot_origem: row.collectioncode || "",                   
+
+                notes: capitalizarPrimeiraLetra(row.notes),
+
+                projeto: projeto,
+
+                habito: extrairHabito(row.notes),
+                habitat: extrairHabitat(row.notes),
+            };
+
+            out.push(novaLinha);
+            progText.textContent = `${Math.round(((i+1)/json.length)*100)}%`;
+        });
+
+        const ws = XLSX.utils.json_to_sheet(out, { header: colunasJabot });
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "JABOT");
+        let nomeFinal = nomeArquivoInput.trim();
+
+if (!nomeFinal.toLowerCase().endsWith(".xlsx")) {
+    nomeFinal += ".xlsx";
+}
+
+XLSX.writeFile(wb, nomeFinal);
+
+        progress.style.display = "none";
+
+        mostrarAvisos(avisos);
+
+alert(
+    `Conversão concluída.\n\n` +
+    `Linhas processadas: ${out.length}\n` +
+    `Avisos encontrados: ${avisos.length}`
+);
+    };
+
+    reader.readAsArrayBuffer(fileInput.files[0]);
+}
+
+</script>
+
+</body>
+</html>
