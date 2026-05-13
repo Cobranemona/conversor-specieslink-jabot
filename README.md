@@ -103,16 +103,5 @@ O arquivo convertido contém as 56 colunas do padrão JABOT, incluindo:
 - Informações ecológicas (hábito, habitat)
 - Metadados (projeto, sigla da coleção)
 
----
 
-## 💻 Instalação Local
 
-### Pré-requisitos
-- Navegador web moderno (Chrome, Firefox, Edge, Safari)
-- Git (opcional, para clonar o repositório)
-
-### Passos
-
-1. **Clone o repositório:**
-```bash
-git clone https://github.com/cobranemona/conversor-specieslink-jabot.git
