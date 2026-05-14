@@ -1,13 +1,12 @@
-# 🔄 Conversor SpeciesLink → JABOT
+# Conversor SpeciesLink → JABOT
 
 [![GitHub Pages](https://img.shields.io/badge/Acessar%20Ferramenta-Online-brightgreen)](https://cobranemona.github.io/conversor-specieslink-jabot)
 [![Licença](https://img.shields.io/badge/Licença-MIT-blue.svg)](LICENSE)
 
 Ferramenta web gratuita para converter dados do SpeciesLink para o formato padronizado JABOT, utilizado por herbários e coleções biológicas brasileiras.
 
----
 
-## 📖 Índice
+## Índice
 
 - [Sobre o Projeto](#sobre-o-projeto)
 - [Funcionalidades](#funcionalidades)
@@ -19,11 +18,10 @@ Ferramenta web gratuita para converter dados do SpeciesLink para o formato padro
 - [Licença](#licença)
 - [Contato](#contato)
 
----
 
-## 📋 Sobre o Projeto
+## Sobre o Projeto
 
-O **Conversor SpeciesLink → JABOT** foi desenvolvido para facilitar a migração de dados de biodiversidade entre plataformas. O SpeciesLink é uma rede de informações de coleções biológicas, enquanto o JABOT é o sistema de gerenciamento utilizado pelo Jardim Botânico do Rio de Janeiro e diversas instituições parceiras.
+O **Conversor SpeciesLink → JABOT** foi elaborado para facilitar a migração de dados de biodiversidade entre plataformas. O SpeciesLink é uma rede de informações de coleções biológicas, enquanto o JABOT é o sistema de gerenciamento utilizado por diversas instituições parceiras, incluidno o Herbário Evaldo Buttura.
 
 Esta ferramenta automatiza tarefas como:
 - Conversão de coordenadas
@@ -41,7 +39,7 @@ Esta ferramenta automatiza tarefas como:
 
 ---
 
-## 🚀 Funcionalidades
+## Funcionalidades
 
 ### Processamento Automático
 - [x] Conversão de coordenadas decimais para Graus-Minutos-Segundos (GMS)
@@ -65,11 +63,11 @@ Esta ferramenta automatiza tarefas como:
 
 ---
 
-## 📝 Como Usar
+## Como Usar
 
 ### Uso Online (Recomendado)
 
-1. Acesse: [https://cobranemona.github.io/conversor-specieslink-jabot](https://cobranemona.github.io/conversor-specieslink-jabot)
+1. Acesse: https://marlonroyer.github.io/conversor-specieslink-jabot/
 2. Preencha o nome do projeto
 3. Opcionalmente, personalize o nome do arquivo de saída
 4. Selecione o arquivo .xlsx exportado do SpeciesLink
